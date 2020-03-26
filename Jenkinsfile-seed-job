@@ -1,0 +1,38 @@
+#!/usr/bin/env groovy
+
+def runCmd(cmd, timeout=120000) {
+  def stdout = new StringBuilder()
+  def stderr = new StringBuilder()
+  def proc = cmd.execute()
+  proc.consumeProcessOutput(stdout, stderr)
+  proc.waitForOrKill(timeout)
+  println "stdout: $stdout"
+  println "stderr: $stderr"
+  return stdout.toString().trim()
+}
+
+def repo = 'https://github.com/tilne/seed-jobs-tester.git'
+def tmpDir = runCmd('mktemp -d')
+def repoPath = "${tmpDir}/repo_path"
+runCmd("git clone ${repo} ${repoPath}")
+
+def jenkinsFiles = []
+new File(repoPath).eachFileMatch (~/^Jenkinsfile-.*/) { file ->
+  jenkinsFiles << file
+}
+
+jenkinsFiles.each { jenkinsFile ->
+  pipelineJob(jenkinsFile.name.split('Jenkinsfile-')[-1]) {
+    definition {
+      cpsScm {
+        scm {
+          git(repo)
+        }
+        scriptPath(jenkinsFile.name)
+      }
+    }
+    triggers {
+      scm('* * * * *')
+    }
+  }
+}
