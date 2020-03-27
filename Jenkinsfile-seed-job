@@ -1,5 +1,7 @@
 #!/usr/bin/env groovy
 
+import jenkins.model.Jenkins
+
 def runCmd(cmd, timeout=120000) {
   def stdout = new StringBuilder()
   def stderr = new StringBuilder()
@@ -11,28 +13,50 @@ def runCmd(cmd, timeout=120000) {
   return stdout.toString().trim()
 }
 
+def isNewlySeededJob(jobName) {
+  def jenkinsInstance = jenkins.model.Jenkins.get()
+  def isNewlySeeded = jenkinsInstance.getItem(jobName) == null
+  if (isNewlySeeded) {
+    println "${jobName} is newly seeded"
+  } else {
+    println "${jobName} already existed"
+  }
+  return isNewlySeeded
+}
+
+// Checkout repo
+// TODO: surely there's a better way to do this
 def repo = 'https://github.com/tilne/seed-jobs-tester.git'
 def tmpDir = runCmd('mktemp -d')
 def repoPath = "${tmpDir}/repo_path"
 runCmd("git clone ${repo} ${repoPath}")
 
+// Get paths to Jenkinsfiles. Assume that they are in repo's top level.
 def jenkinsFiles = []
 new File(repoPath).eachFileMatch (~/^Jenkinsfile-.*/) { file ->
   jenkinsFiles << file
 }
 
+// Create jobs, keep track of which ones are new
 jenkinsFiles.each { jenkinsFile ->
-  pipelineJob(jenkinsFile.name.split('Jenkinsfile-')[-1]) {
-    definition {
-      cpsScm {
-        scm {
-          git(repo)
+  def jobName = jenkinsFile.name.split('Jenkinsfile-')[-1]
+  /* Only seed jobs that don't currently exist so that triggers defined in
+   * scripts aren't clobbered.
+   * TODO: this can probably be done more cleanly from the job configuration
+   */
+  if (isNewlySeededJob(jobName)) {
+    def seededJob = pipelineJob(jobName) {
+      definition {
+        cpsScm {
+          scm {
+            git(repo)
+          }
+          scriptPath(jenkinsFile.name)
         }
-        scriptPath(jenkinsFile.name)
       }
     }
-    triggers {
-      scm('* * * * *')
-    }
+    println "Queueing ${jobName} so that its triggers and parameters are populated."
+    queue(jobName)
   }
 }
+
