@@ -30,7 +30,6 @@ matrix-auth
 oic-auth
 pam-auth
 Parameterized-Remote-Trigger
-workflow-aggregator
 pipeline-utility-steps
 postbuildscript
 python
@@ -47,5 +46,7 @@ thinBackup
 throttle-concurrents
 timestamper
 webhook-step
+workflow-aggregator
+workflow-cps
 windows-slaves
 ws-cleanup
