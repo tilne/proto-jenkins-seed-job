@@ -1,0 +1,108 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.plugins.jira.JiraProjectProperty plugin="jira@3.0.14"/>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@1.31">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+    <com.synopsys.arc.jenkinsci.plugins.jobrestrictions.jobs.JobRestrictionProperty plugin="job-restrictions@0.8"/>
+    <org.jenkinsci.plugins.sharedworkspace.SharedWorkspace plugin="shared-workspace@1.0.2">
+      <name>NONE</name>
+    </org.jenkinsci.plugins.sharedworkspace.SharedWorkspace>
+    <hudson.plugins.throttleconcurrents.ThrottleJobProperty plugin="throttle-concurrents@2.0.2">
+      <categories class="java.util.concurrent.CopyOnWriteArrayList"/>
+      <throttleEnabled>false</throttleEnabled>
+      <throttleOption>project</throttleOption>
+      <limitOneJobWithMatchingParams>false</limitOneJobWithMatchingParams>
+      <paramsToUseForLimit></paramsToUseForLimit>
+    </hudson.plugins.throttleconcurrents.ThrottleJobProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>false</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <javaposse.jobdsl.plugin.ExecuteDslScripts plugin="job-dsl@1.77">
+      <scriptText>#!/usr/bin/env groovy
+
+import jenkins.model.Jenkins
+
+def runCmd(cmd, timeout=120000) {
+  def stdout = new StringBuilder()
+  def stderr = new StringBuilder()
+  def proc = cmd.execute()
+  proc.consumeProcessOutput(stdout, stderr)
+  proc.waitForOrKill(timeout)
+  println &quot;stdout: $stdout&quot;
+  println &quot;stderr: $stderr&quot;
+  return stdout.toString().trim()
+}
+
+def isNewlySeededJob(jobName) {
+  def jenkinsInstance = jenkins.model.Jenkins.get()
+  def isNewlySeeded = jenkinsInstance.getItem(jobName) == null
+  if (isNewlySeeded) {
+    println &quot;${jobName} is newly seeded&quot;
+  } else {
+    println &quot;${jobName} already existed&quot;
+  }
+  return isNewlySeeded
+}
+
+// Checkout repo
+// TODO: surely there&apos;s a better way to do this
+def repo = &apos;https://github.com/tilne/seed-jobs-tester.git&apos;
+def tmpDir = runCmd(&apos;mktemp -d&apos;)
+def repoPath = &quot;${tmpDir}/repo_path&quot;
+runCmd(&quot;git clone ${repo} ${repoPath}&quot;)
+
+// Get paths to Jenkinsfiles. Assume that they are in repo&apos;s top level.
+def jenkinsFiles = []
+new File(repoPath).eachFileMatch (~/^Jenkinsfile-.*/) { file -&gt;
+  jenkinsFiles &lt;&lt; file
+}
+
+// Create jobs, keep track of which ones are new
+jenkinsFiles.each { jenkinsFile -&gt;
+  def jobName = jenkinsFile.name.split(&apos;Jenkinsfile-&apos;)[-1]
+  /* Only seed jobs that don&apos;t currently exist so that triggers defined in
+   * scripts aren&apos;t clobbered.
+   * TODO: this can probably be done more cleanly from the job configuration
+   */
+  if (isNewlySeededJob(jobName)) {
+    def seededJob = pipelineJob(jobName) {
+      definition {
+        cpsScm {
+          scm {
+            git(repo)
+          }
+          scriptPath(jenkinsFile.name)
+        }
+      }
+    }
+    println &quot;Queueing ${jobName} so that its triggers and parameters are populated.&quot;
+    queue(jobName)
+  }
+}</scriptText>
+      <usingScriptText>true</usingScriptText>
+      <sandbox>false</sandbox>
+      <ignoreExisting>false</ignoreExisting>
+      <ignoreMissingFiles>false</ignoreMissingFiles>
+      <failOnMissingPlugin>false</failOnMissingPlugin>
+      <failOnSeedCollision>false</failOnSeedCollision>
+      <unstableOnDeprecation>false</unstableOnDeprecation>
+      <removedJobAction>IGNORE</removedJobAction>
+      <removedViewAction>IGNORE</removedViewAction>
+      <removedConfigFilesAction>IGNORE</removedConfigFilesAction>
+      <lookupStrategy>JENKINS_ROOT</lookupStrategy>
+    </javaposse.jobdsl.plugin.ExecuteDslScripts>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
